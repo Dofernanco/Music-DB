@@ -27,11 +27,13 @@ public class MainWindow : Window
         // Inicialización de la base de datos y los controladores
         Database db = new Database("music.db");
         db.Initialize();
+
+        // Inicializar el minero MP3
+        mp3Miner = new Miner(db);
+
         groupController = new GroupController(db);
         performerController = new PerformerController(db);
         songController = new SongController(db);
-	groupController = new GroupController(db);
-        performerController = new PerformerController(db);
 
         // Configuración básica de la ventana
         SetDefaultSize(800, 600);
@@ -41,7 +43,7 @@ public class MainWindow : Window
         VBox vbox = new VBox(false, 5);
         Add(vbox);
 
-	HBox searchBox = new HBox(false, 5);
+        HBox searchBox = new HBox(false, 5);
         searchEntry = new Entry();
         Button searchButton = new Button("Buscar");
         searchButton.Clicked += OnSearchButtonClicked;
@@ -61,21 +63,6 @@ public class MainWindow : Window
         mineButton.Clicked += OnMineButtonClicked;
         vbox.PackStart(mineButton, false, false, 0);
 
-        // Botón para editar la canción seleccionada
-        Button editSongButton = new Button("Editar Canción Seleccionada");
-        editSongButton.Clicked += OnEditSongButtonClicked;
-        vbox.PackStart(editSongButton, false, false, 0);
-
-        // Botón para gestionar intérpretes
-        Button managePerformersButton = new Button("Gestionar Intérpretes");
-        managePerformersButton.Clicked += OnManagePerformersButtonClicked;
-        vbox.PackStart(managePerformersButton, false, false, 0);
-
-        // Botón para gestionar grupos
-        Button manageGroupsButton = new Button("Gestionar Grupos");
-        manageGroupsButton.Clicked += OnManageGroupsButtonClicked;
-        vbox.PackStart(manageGroupsButton, false, false, 0);
-
         // Crear la barra de progreso
         progressBar = new ProgressBar();
         progressLabel = new Label("0% completado");
@@ -84,8 +71,7 @@ public class MainWindow : Window
 
         // Crear la tabla para mostrar las canciones
         CreateSongListView(vbox);
-
-	CreateResultsListView(vbox);
+        CreateResultsListView(vbox);
 
         // Inicializar el servicio de progreso
         progressService = new ProgressService(progressBar, progressLabel);
@@ -96,13 +82,10 @@ public class MainWindow : Window
 
     private void CreateSongListView(VBox vbox)
     {
-        // Crear el almacenamiento de datos (ListStore)
         songListStore = new ListStore(typeof(int), typeof(string), typeof(string), typeof(string), typeof(string)); // id_rola, Título, Artista, Álbum, Año
 
-        // Crear el TreeView y asignar el modelo de datos
         songTreeView = new TreeView(songListStore);
 
-        // Crear y añadir columnas
         TreeViewColumn titleColumn = new TreeViewColumn { Title = "Título" };
         CellRendererText titleCell = new CellRendererText();
         titleColumn.PackStart(titleCell, true);
@@ -127,7 +110,6 @@ public class MainWindow : Window
         yearColumn.AddAttribute(yearCell, "text", 4);
         songTreeView.AppendColumn(yearColumn);
 
-        // Crear un contenedor con scroll para la tabla
         ScrolledWindow scrolledWindow = new ScrolledWindow();
         scrolledWindow.Add(songTreeView);
         vbox.PackStart(scrolledWindow, true, true, 0);
@@ -135,7 +117,6 @@ public class MainWindow : Window
 
     private void OnSelectDirectoryButtonClicked(object sender, EventArgs e)
     {
-        // Crear el diálogo para seleccionar el directorio
         FileChooserDialog fileChooser = new FileChooserDialog("Selecciona el directorio", this, FileChooserAction.SelectFolder, "Cancelar", ResponseType.Cancel, "Seleccionar", ResponseType.Accept);
 
         if (fileChooser.Run() == (int)ResponseType.Accept)
@@ -149,13 +130,10 @@ public class MainWindow : Window
 
     private void CreateResultsListView(VBox vbox)
     {
-        // Crear el almacenamiento de datos (ListStore) para los resultados
         resultsListStore = new ListStore(typeof(string), typeof(string), typeof(string), typeof(string)); // Título, Artista, Álbum, Año
 
-        // Crear el TreeView para mostrar los resultados
         resultsTreeView = new TreeView(resultsListStore);
 
-        // Crear y añadir columnas
         TreeViewColumn titleColumn = new TreeViewColumn { Title = "Título" };
         CellRendererText titleCell = new CellRendererText();
         titleColumn.PackStart(titleCell, true);
@@ -180,33 +158,9 @@ public class MainWindow : Window
         yearColumn.AddAttribute(yearCell, "text", 3);
         resultsTreeView.AppendColumn(yearColumn);
 
-        // Crear un contenedor con scroll para la tabla
         ScrolledWindow scrolledWindow = new ScrolledWindow();
         scrolledWindow.Add(resultsTreeView);
         vbox.PackStart(scrolledWindow, true, true, 0);
-    }
-
-    // Evento para manejar la búsqueda
-    private void OnSearchButtonClicked(object sender, EventArgs e)
-    {
-        string searchTerm = searchEntry.Text.Trim();
-        if (string.IsNullOrEmpty(searchTerm))
-        {
-            ShowErrorMessage("Por favor, introduce un término de búsqueda.");
-            return;
-        }
-
-        // Limpiar los resultados anteriores
-        resultsListStore.Clear();
-
-        // Realizar la consulta
-        List<Rola> songs = songController.SearchSongs(searchTerm);
-
-        // Mostrar los resultados en el TreeView
-        foreach (var song in songs)
-        {
-            resultsListStore.AppendValues(song.Title, song.PerformerName, song.AlbumName, song.Year.ToString());
-        }
     }
 
     private async void OnMineButtonClicked(object sender, EventArgs e)
@@ -217,127 +171,73 @@ public class MainWindow : Window
             return;
         }
 
-        // Aquí iniciamos la minería de archivos MP3
         await MineMP3FilesAsync(selectedDirectory);
     }
 
     private async Task MineMP3FilesAsync(string directory)
+{
+    string[] mp3Files = Directory.GetFiles(directory, "*.mp3", SearchOption.AllDirectories);
+
+    // Inicializar la barra de progreso
+    progressService.Initialize(mp3Files.Length);
+
+    int totalFiles = mp3Files.Length;
+
+    for (int i = 0; i < totalFiles; i++)
     {
-        string[] mp3Files = Directory.GetFiles(directory, "*.mp3", SearchOption.AllDirectories);
+        string filePath = mp3Files[i];
 
-        // Inicializar la barra de progreso
-        progressService.Initialize(mp3Files.Length);
-
-        int totalFiles = mp3Files.Length;
-
-        for (int i = 0; i < totalFiles; i++)
+        try
         {
-            string filePath = mp3Files[i];
+            // Llamar al método ProcessSong de Miner para procesar el archivo MP3
+            mp3Miner.ProcessSong(filePath);
 
-            try
-            {
-                // Usar TagLib# para extraer la información del archivo MP3
-                var file = TagLib.File.Create(filePath);
+            // Extraer los datos que quieras mostrar en el TreeView (puedes también obtener los datos de la base de datos si lo prefieres)
+            var file = TagLib.File.Create(filePath);
+            string title = file.Tag.Title ?? "Desconocido";
+            string artist = file.Tag.FirstPerformer ?? "Desconocido";
+            string album = file.Tag.Album ?? "Desconocido";
+            uint year = file.Tag.Year == 0 ? (uint)System.IO.File.GetCreationTime(filePath).Year : file.Tag.Year;
 
-                // Obtener las etiquetas reales del archivo MP3
-                string title = file.Tag.Title ?? "Desconocido";
-                string artist = file.Tag.FirstPerformer ?? "Desconocido";
-                string album = file.Tag.Album ?? "Desconocido";
-                uint year = file.Tag.Year == 0 ? (uint)DateTime.Now.Year : file.Tag.Year;
+            // Actualizar el ListStore con la canción procesada
+            songListStore.AppendValues(i + 1, title, artist, album, year.ToString());
 
-                // Insertar la canción en la base de datos y obtener el id_rola
-                int idRola = mp3Miner.InsertSong(title, artist, album, (int)year, filePath);
+            Console.WriteLine($"Canción agregada al ListStore: {title}, Artista: {artist}, Álbum: {album}, Año: {year}");
 
-                // Agregar los datos reales al TreeView, incluyendo el id_rola
-                songListStore.AppendValues(idRola, title, artist, album, year.ToString());
-
-                // Actualizar la barra de progreso
-                progressService.UpdateProgress(i + 1, totalFiles);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error al procesar {filePath}: {ex.Message}");
-            }
-
-            await Task.Delay(100); // Simula una pequeña pausa para actualizar la UI
+            // Actualizar la barra de progreso
+            progressService.UpdateProgress(i + 1, totalFiles);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al procesar {filePath}: {ex.Message}");
         }
 
-        progressService.Complete();
-        ShowInfoMessage("Minería completada.");
+        await Task.Delay(100); // Simula una pequeña pausa para actualizar la UI
     }
 
-    // Evento para editar la canción seleccionada
-    private void OnEditSongButtonClicked(object sender, EventArgs e)
+    progressService.Complete();
+    ShowInfoMessage("Minería completada.");
+}
+
+
+
+    private void OnSearchButtonClicked(object sender, EventArgs e)
     {
-        TreeIter iter;
-        if (songTreeView.Selection.GetSelected(out iter))
+        string searchTerm = searchEntry.Text.Trim();
+        if (string.IsNullOrEmpty(searchTerm))
         {
-            string title = (string)songListStore.GetValue(iter, 1);
-            string album = (string)songListStore.GetValue(iter, 3);
-            string year = (string)songListStore.GetValue(iter, 4);
-
-            EditSongDialog dialog = new EditSongDialog(title, album, year, "Género");
-
-            if (dialog.Run() == (int)ResponseType.Ok)
-            {
-                // Validar el año antes de continuar
-                if (!dialog.ValidateYear())
-                {
-                    dialog.Destroy();
-                    return;
-                }
-
-                // Obtener los datos editados
-                string newTitle = dialog.GetTitle();
-                string newAlbum = dialog.GetAlbum();
-                string newYear = dialog.GetYear();
-
-                // Actualizar el TreeView
-                songListStore.SetValue(iter, 1, newTitle);
-                songListStore.SetValue(iter, 3, newAlbum);
-                songListStore.SetValue(iter, 4, newYear);
-
-                // Actualizar la base de datos usando el id_rola
-                int songId = (int)songListStore.GetValue(iter, 0);
-                songController.UpdateSong(songId, newTitle, newAlbum, int.Parse(newYear));
-
-                Console.WriteLine($"Canción editada: {newTitle}, {newAlbum}, {newYear}");
-            }
-            dialog.Destroy();
-        }
-        else
-        {
-            ShowErrorMessage("Por favor, selecciona una canción para editar.");
-        }
-    }
-
-    // Evento para gestionar intérpretes
-    private void OnManagePerformersButtonClicked(object sender, EventArgs e)
-    {
-        ManagePerformersDialog dialog = new ManagePerformersDialog();
-
-        // Obtener todos los intérpretes y añadirlos al diálogo
-        using (SQLiteDataReader reader = performerController.GetAllPersons())
-        {
-            while (reader.Read())
-            {
-                string name = reader.GetString(0);
-                string type = (reader.GetInt32(1) == 0) ? "Persona" : "Grupo";
-                dialog.AddPerformer(name, type);
-            }
+            ShowErrorMessage("Por favor, introduce un término de búsqueda.");
+            return;
         }
 
-        dialog.Run();
-        dialog.Destroy();
-    }
+        resultsListStore.Clear();
 
-    // Evento para gestionar grupos
-    private void OnManageGroupsButtonClicked(object sender, EventArgs e)
-    {
-        ManageGroupsDialog dialog = new ManageGroupsDialog(groupController, performerController);
-        dialog.LoadGroups();  // Cargar los grupos desde la base de datos
-        dialog.Run();
-        dialog.Destroy();
+        List<Rola> songs = songController.SearchSongs(searchTerm);
+
+        foreach (var song in songs)
+        {
+            resultsListStore.AppendValues(song.Title, song.PerformerName, song.AlbumName, song.Year.ToString());
+        }
     }
 
     private void ShowErrorMessage(string message)
